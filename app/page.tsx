@@ -19,9 +19,10 @@ import {
   TreePine,
   Flower,
 } from "lucide-react"
+import { CalendarReservas } from "@/components/calendar-reservas"
 
 export default function SuenosFelicesLanding() {
-  const [selectedTents, setSelectedTents] = useState<number | null>(null)
+  const [selectedTents, setSelectedTents] = useState<number>(3)
   const [selectedTheme, setSelectedTheme] = useState<string>("")
   const [guestCount, setGuestCount] = useState<number>(5)
   const [additionalServices, setAdditionalServices] = useState({
@@ -33,6 +34,7 @@ export default function SuenosFelicesLanding() {
   })
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
 
   // Real service images for the carousel
   const serviceImages = [
@@ -103,9 +105,8 @@ export default function SuenosFelicesLanding() {
   const calculateTotal = () => {
     let total = 0
 
-    if (selectedTents && tentPrices[selectedTents as keyof typeof tentPrices]) {
-      total += tentPrices[selectedTents as keyof typeof tentPrices]
-    }
+    // Precio base de 3 carpitas + carpitas adicionales
+    total += 120000 + (selectedTents - 3) * 18000
 
     // Taller creativo con precios variables según invitados
     if (additionalServices.workshop) {
@@ -177,6 +178,92 @@ export default function SuenosFelicesLanding() {
     if (guestCount <= 6) return "Caja chica (hasta 6 invitadas)"
     if (guestCount <= 10) return "Caja mediana (hasta 10 invitadas)"
     return "Caja grande (hasta 14 invitadas)"
+  }
+
+  // Función para enviar notificación automática
+  const enviarNotificacionNuevaReserva = async () => {
+    try {
+      const reservaData = {
+        fecha: selectedDate?.toLocaleDateString("es-ES", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        tematica: selectedTheme,
+        invitados: guestCount,
+        carpitas: selectedTents,
+        total: formatPrice(calculateTotal()),
+        clienteInfo: "Pendiente de contacto",
+      }
+
+      await fetch("/api/send-notification", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "nueva_reserva",
+          data: reservaData,
+        }),
+      })
+
+      // No mostramos alert al usuario, es una notificación interna
+      console.log("Notificación enviada al equipo")
+    } catch (error) {
+      console.error("Error enviando notificación:", error)
+    }
+  }
+
+  const handleReservarAhora = () => {
+    // Enviar notificación automática al equipo
+    enviarNotificacionNuevaReserva()
+
+    // Continuar con el flujo normal de WhatsApp
+    let message = `Hola! Me interesa contratar una pijamada de Sueños Felices\n\n`
+    message += `DETALLES DEL PEDIDO:\n`
+
+    if (selectedDate) {
+      message += `Fecha solicitada: ${selectedDate.toLocaleDateString("es-ES", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })}\n`
+    }
+
+    if (selectedTheme) {
+      message += `Temática: ${selectedTheme}\n`
+    }
+
+    message += `Número de invitados: ${guestCount}\n`
+    message += `Carpitas: ${selectedTents} carpitas (${selectedTents * 2} invitados máximo)\n`
+    message += `\nSERVICIOS ADICIONALES:\n`
+
+    if (additionalServices.workshop) {
+      message += `Taller Creativo (${getWorkshopDescription()}): ${formatPrice(getWorkshopPrice())}\n`
+    }
+
+    if (additionalServices.metegol) {
+      message += `Mini Metegol: ${formatPrice(5000)}\n`
+    }
+
+    if (additionalServices.kitTrays > 0) {
+      message += `Kit Bandejas y Vasos: ${additionalServices.kitTrays} unidades\n`
+    }
+
+    if (additionalServices.drawingBoards > 0) {
+      message += `Tablitas con Actividades: ${additionalServices.drawingBoards} unidades\n`
+    }
+
+    if (additionalServices.breakfast > 0) {
+      message += `Combo Desayuno: ${additionalServices.breakfast} unidades\n`
+    }
+
+    message += `\nTOTAL ESTIMADO: ${formatPrice(calculateTotal())}\n\n`
+    message += `Espero su respuesta para coordinar todos los detalles!`
+
+    window.open(`https://wa.me/5493513006092?text=${encodeURIComponent(message)}`, "_blank")
   }
 
   return (
@@ -409,6 +496,13 @@ export default function SuenosFelicesLanding() {
                 </select>
               </div>
 
+              {/* Calendar Section */}
+              <div>
+                <CalendarReservas selectedDate={selectedDate} onDateSelect={setSelectedDate} />
+              </div>
+
+              <Separator className="bg-[#DC9171]/20" />
+
               {/* Guest Count */}
               <div>
                 <h3 className="text-lg font-semibold text-[#DC8C47] mb-4">Número de invitados</h3>
@@ -442,23 +536,66 @@ export default function SuenosFelicesLanding() {
 
               {/* Tent Selection */}
               <div>
-                <h3 className="text-lg font-semibold text-[#DC8C47] mb-4">Selecciona el número de carpitas</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                  {Object.entries(tentPrices).map(([tents, price]) => (
+                <h3 className="text-lg font-semibold text-[#DC8C47] mb-4">Número de carpitas</h3>
+
+                <div className="space-y-4">
+                  {/* Contador de carpitas */}
+                  <div className="flex items-center justify-center space-x-4 p-4 border-2 border-[#DC9171]/20 rounded-lg">
                     <Button
-                      key={tents}
-                      variant={selectedTents === Number.parseInt(tents) ? "default" : "outline"}
-                      className={`h-16 md:h-20 flex flex-col text-sm md:text-base transition-all duration-300 hover:scale-105 hover:shadow-lg ${
-                        selectedTents === Number.parseInt(tents)
-                          ? "bg-gradient-to-br from-[#DC8C47] to-[#DC9171] text-white scale-105 shadow-lg"
-                          : "border-[#DC8C47] text-[#DC8C47] hover:bg-[#DC8C47] hover:text-white"
-                      }`}
-                      onClick={() => setSelectedTents(Number.parseInt(tents))}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedTents(Math.max(3, selectedTents - 1))}
+                      className="w-10 h-10 p-0 transition-all duration-300 hover:scale-110 hover:bg-[#DC8C47] hover:text-white"
+                      disabled={selectedTents === 3}
                     >
-                      <span className="font-bold">{tents} Carpitas</span>
-                      <span className="text-sm">{formatPrice(price)}</span>
+                      -
                     </Button>
-                  ))}
+                    <div className="text-center">
+                      <span className="text-2xl font-bold text-[#DC8C47]">{selectedTents}</span>
+                      <p className="text-sm text-[#B2A98C]">carpitas</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedTents(Math.min(10, selectedTents + 1))}
+                      className="w-10 h-10 p-0 transition-all duration-300 hover:scale-110 hover:bg-[#DC8C47] hover:text-white"
+                      disabled={selectedTents === 10}
+                    >
+                      +
+                    </Button>
+                  </div>
+
+                  {/* Información de precios */}
+                  <div className="bg-gradient-to-r from-[#DC8C47]/5 to-[#DC9171]/5 p-4 rounded-lg">
+                    <div className="text-center space-y-2">
+                      <p className="text-[#DC8C47] font-semibold">Precio base (3 carpitas): {formatPrice(120000)}</p>
+                      {selectedTents > 3 && (
+                        <p className="text-[#DC9171] font-medium">
+                          + {selectedTents - 3} carpita{selectedTents > 4 ? "s" : ""} adicional
+                          {selectedTents > 4 ? "es" : ""}: {formatPrice((selectedTents - 3) * 18000)}
+                        </p>
+                      )}
+                      <p className="text-lg font-bold text-[#DC8C47]">
+                        Total carpitas: {formatPrice(120000 + (selectedTents - 3) * 18000)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Comentarios informativos */}
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2 text-[#B2A98C]">
+                      <div className="w-2 h-2 bg-[#DC8C47] rounded-full"></div>
+                      <span>Por cada carpita entran dos invitados</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[#B2A98C]">
+                      <div className="w-2 h-2 bg-[#DC9171] rounded-full"></div>
+                      <span>Cada carpita adicional: {formatPrice(18000)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[#DC8C47] font-medium">
+                      <div className="w-2 h-2 bg-[#DC8C47] rounded-full"></div>
+                      <span>Consultar disponibilidad si se necesita más de 10 carpitas</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -649,47 +786,7 @@ export default function SuenosFelicesLanding() {
                   <Button
                     className="w-full mt-4 bg-gradient-to-r from-[#DC8C47] to-[#DC9171] hover:from-[#DC9171] hover:to-[#D2A278] text-white transition-all duration-300 hover:scale-105 hover:shadow-lg group"
                     size="lg"
-                    onClick={() => {
-                      let message = `Hola! Me interesa contratar una pijamada de Sueños Felices\n\n`
-                      message += `DETALLES DEL PEDIDO:\n`
-
-                      if (selectedTheme) {
-                        message += `Temática: ${selectedTheme}\n`
-                      }
-
-                      message += `Número de invitados: ${guestCount}\n`
-
-                      if (selectedTents) {
-                        message += `Carpitas: ${selectedTents} carpitas\n`
-                      }
-
-                      message += `\nSERVICIOS ADICIONALES:\n`
-
-                      if (additionalServices.workshop) {
-                        message += `Taller Creativo (${getWorkshopDescription()}): ${formatPrice(getWorkshopPrice())}\n`
-                      }
-
-                      if (additionalServices.metegol) {
-                        message += `Mini Metegol: ${formatPrice(5000)}\n`
-                      }
-
-                      if (additionalServices.kitTrays > 0) {
-                        message += `Kit Bandejas y Vasos: ${additionalServices.kitTrays} unidades\n`
-                      }
-
-                      if (additionalServices.drawingBoards > 0) {
-                        message += `Tablitas con Actividades: ${additionalServices.drawingBoards} unidades\n`
-                      }
-
-                      if (additionalServices.breakfast > 0) {
-                        message += `Combo Desayuno: ${additionalServices.breakfast} unidades\n`
-                      }
-
-                      message += `\nTOTAL ESTIMADO: ${formatPrice(calculateTotal())}\n\n`
-                      message += `Espero su respuesta para coordinar todos los detalles!`
-
-                      window.open(`https://wa.me/5493513006092?text=${encodeURIComponent(message)}`, "_blank")
-                    }}
+                    onClick={handleReservarAhora}
                   >
                     <Heart className="w-5 h-5 mr-2 group-hover:scale-125 transition-transform duration-300" />
                     Reservar Ahora
